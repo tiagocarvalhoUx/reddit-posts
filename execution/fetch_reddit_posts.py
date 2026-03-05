@@ -33,7 +33,9 @@ _TMP_DIR = os.environ.get("TMP_DIR", ".tmp")
 OUTPUT_FILE = os.path.join(_TMP_DIR, "reddit_top_posts.json")
 
 HEADERS = {
-    "User-Agent": "antigravity-agent/1.0 (research bot)"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 def fetch_posts(query: str, subreddits: list[str] | None = None, limit: int = 100) -> list[dict]:
@@ -44,7 +46,7 @@ def fetch_posts(query: str, subreddits: list[str] | None = None, limit: int = 10
         # Busca dentro de cada subreddit relevante
         for sub in subreddits:
             url = f"https://www.reddit.com/r/{sub}/search.json"
-            params = {"q": query, "sort": "new", "limit": limit, "t": TIME_FILTER, "restrict_sr": "true"}
+            params = {"q": query, "sort": "top", "limit": limit, "t": TIME_FILTER, "restrict_sr": "true"}
             try:
                 r = requests.get(url, headers=HEADERS, params=params, timeout=15)
                 r.raise_for_status()
@@ -64,7 +66,7 @@ def fetch_posts(query: str, subreddits: list[str] | None = None, limit: int = 10
         return unique
     else:
         url = "https://www.reddit.com/search.json"
-        params = {"q": query, "sort": "new", "limit": limit, "t": TIME_FILTER, "type": "link"}
+        params = {"q": query, "sort": "top", "limit": limit, "t": TIME_FILTER, "type": "link"}
         try:
             r = requests.get(url, headers=HEADERS, params=params, timeout=15)
             r.raise_for_status()
