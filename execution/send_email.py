@@ -24,7 +24,8 @@ if os.path.exists(_ENV):
                 _k, _v = _line.split("=", 1)
                 os.environ[_k.strip()] = _v.strip()
 
-DATA_FILE   = ".tmp/reddit_top_posts.json"
+_TMP_DIR    = os.environ.get("TMP_DIR", ".tmp")
+DATA_FILE   = os.path.join(_TMP_DIR, "reddit_top_posts.json")
 TO_EMAIL    = "tiago_carvalho07@yahoo.com.br"
 SUBJECT     = "Reddit Pulse · Top Posts da Semana"
 

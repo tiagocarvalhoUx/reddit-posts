@@ -29,7 +29,8 @@ TOPICS = {
 TOP_N = 5
 LIMIT = 100
 TIME_FILTER = "week"
-OUTPUT_FILE = ".tmp/reddit_top_posts.json"
+_TMP_DIR = os.environ.get("TMP_DIR", ".tmp")
+OUTPUT_FILE = os.path.join(_TMP_DIR, "reddit_top_posts.json")
 
 HEADERS = {
     "User-Agent": "antigravity-agent/1.0 (research bot)"
@@ -153,7 +154,7 @@ def print_results(all_results: dict):
             print(f"      {p['url']}")
 
 def main():
-    os.makedirs(".tmp", exist_ok=True)
+    os.makedirs(_TMP_DIR, exist_ok=True)
     log = AutomationLogger("fetch_reddit_posts")
     log.info("Iniciando busca", {"topics": list(TOPICS.keys()), "top_n": TOP_N, "time_filter": TIME_FILTER})
 

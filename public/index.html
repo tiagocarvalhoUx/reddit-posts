@@ -1,23 +1,4 @@
-"""
-generate_app.py
-Gera um app HTML com Vue 3 + Tailwind CSS (mobile-first).
-Quando servido pelo server.py, busca dados via API e tem botão Atualizar.
-Output: .tmp/app.html
-"""
-
-import json
-import os
-import sys
-from datetime import datetime, timezone
-
-sys.path.insert(0, os.path.dirname(__file__))
-from logger import AutomationLogger
-
-_TMP_DIR    = os.environ.get("TMP_DIR", ".tmp")
-INPUT_FILE  = os.path.join(_TMP_DIR, "reddit_top_posts.json")
-OUTPUT_FILE = os.path.join(_TMP_DIR, "app.html")
-
-TEMPLATE = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR" class="scroll-smooth">
 <head>
   <meta charset="UTF-8" />
@@ -200,10 +181,8 @@ TEMPLATE = r"""<!DOCTYPE html>
                    hover:border-blue-500/25 hover:shadow-xl hover:shadow-blue-500/8"
             :style="{ animationDelay: (idx * 0.07) + 's', background: 'rgba(255,255,255,0.04)' }"
           >
-            <!-- ── IMAGE AREA ── -->
+            <!-- IMAGE AREA -->
             <a :href="post.url" target="_blank" rel="noopener" class="block relative overflow-hidden" style="aspect-ratio:16/7">
-
-              <!-- Imagem real -->
               <img
                 v-if="post.image_url"
                 :src="post.image_url"
@@ -212,33 +191,23 @@ TEMPLATE = r"""<!DOCTYPE html>
                 loading="lazy"
                 @error="post.image_url = null"
               />
-
-              <!-- Placeholder gradiente quando não há imagem -->
               <div v-else
                 :style="{ background: placeholderGradient(post.rank, activeTab) }"
                 class="h-full w-full flex items-center justify-center"
               >
                 <span class="text-4xl opacity-20 select-none">{{ activeTab === 'n8n' ? '⚡' : '🤖' }}</span>
               </div>
-
-              <!-- Overlay escuro no fundo da imagem -->
               <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
-
-              <!-- Rank badge sobre a imagem -->
               <div class="absolute top-3 left-3">
                 <span :class="['rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm', rankClass(post.rank)]">
                   #{{ post.rank }}
                 </span>
               </div>
-
-              <!-- Flair badge -->
               <div v-if="post.flair" class="absolute top-3 right-3">
                 <span class="rounded-full border border-white/15 bg-black/40 px-2 py-0.5 text-[10px] text-slate-300 backdrop-blur-sm max-w-[160px] truncate block">
                   {{ post.flair }}
                 </span>
               </div>
-
-              <!-- Stats sobrepostos no rodapé da imagem -->
               <div class="absolute bottom-0 left-0 right-0 flex items-center gap-3 px-4 py-2.5 text-[12px] font-medium text-white/80">
                 <div class="flex items-center gap-1">
                   <svg class="h-3.5 w-3.5 opacity-70" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l8 8H4z"/></svg>
@@ -256,10 +225,8 @@ TEMPLATE = r"""<!DOCTYPE html>
               </div>
             </a>
 
-            <!-- ── CONTENT AREA ── -->
+            <!-- CONTENT AREA -->
             <div class="p-4 sm:p-5">
-
-              <!-- Meta row -->
               <div class="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
                 <span :class="['rounded-full px-2 py-0.5 font-semibold',
                   activeTab === 'n8n' ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400']">
@@ -270,24 +237,18 @@ TEMPLATE = r"""<!DOCTYPE html>
                 <span class="text-slate-700">·</span>
                 <span class="text-slate-600">{{ post.created_utc.replace(' UTC','') }}</span>
               </div>
-
-              <!-- Title -->
               <h2 class="mb-3 text-sm font-semibold leading-snug text-slate-100 sm:text-[15px]">
                 <a :href="post.url" target="_blank" rel="noopener"
                   :class="['transition-colors duration-150', activeTab === 'n8n' ? 'hover:text-blue-400' : 'hover:text-purple-400']">
                   {{ post.title }}
                 </a>
               </h2>
-
-              <!-- Engagement bar -->
               <div class="mb-3.5 h-[2px] overflow-hidden rounded-full bg-white/[0.06]">
                 <div class="h-full rounded-full transition-all duration-700"
                   :style="{ width: barPct(post.engagement_score) + '%',
                     background: activeTab === 'n8n' ? 'linear-gradient(90deg,#3b82f6,#06b6d4)' : 'linear-gradient(90deg,#8b5cf6,#ec4899)' }">
                 </div>
               </div>
-
-              <!-- CTA -->
               <a :href="post.url" target="_blank" rel="noopener"
                 :class="['inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-all duration-200',
                   activeTab === 'n8n'
@@ -312,14 +273,13 @@ TEMPLATE = r"""<!DOCTYPE html>
   <script>
     const { createApp, ref, computed, onMounted } = Vue;
 
-    // Dados embarcados (fallback offline) — sobrescritos pela API quando disponível
-    const INITIAL_DATA = __DATA__;
+    const INITIAL_DATA = {};
 
     createApp({
       setup() {
         const posts      = ref(INITIAL_DATA);
         const activeTab  = ref('n8n');
-        const generatedAt = ref('__GENERATED_AT__');
+        const generatedAt = ref('');
         const updating   = ref(false);
         const statusMsg  = ref('');
         const sending    = ref(false);
@@ -361,25 +321,26 @@ TEMPLATE = r"""<!DOCTYPE html>
           return arr[(rank - 1) % arr.length];
         };
 
-        // Tenta buscar dados frescos da API ao carregar
         onMounted(async () => {
           try {
             const r = await fetch('/api/data');
-            if (r.ok) posts.value = await r.json();
-          } catch (_) { /* offline — usa dados embarcados */ }
+            if (r.ok) {
+              const data = await r.json();
+              if (data && Object.keys(data).length > 0) {
+                posts.value = data;
+                generatedAt.value = new Date().toLocaleString('pt-BR');
+              }
+            }
+          } catch (_) {}
         });
 
-        // Botão Atualizar — chama /api/update via SSE
         const refresh = async () => {
           if (updating.value) return;
           updating.value = true;
           statusMsg.value = 'Conectando...';
-
           try {
             const es = new EventSource('/api/update');
-
             es.onerror = () => { es.close(); updating.value = false; statusMsg.value = ''; };
-
             es.onmessage = (e) => {
               const msg = JSON.parse(e.data);
               if (msg.status === 'running') {
@@ -432,37 +393,3 @@ TEMPLATE = r"""<!DOCTYPE html>
   </script>
 </body>
 </html>
-"""
-
-
-def load_data() -> dict:
-    with open(INPUT_FILE, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def build_html(data: dict) -> str:
-    generated_at = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
-    data_json = json.dumps(data, ensure_ascii=False)
-    return (
-        TEMPLATE
-        .replace("__DATA__", data_json)
-        .replace("__GENERATED_AT__", generated_at)
-    )
-
-
-def main():
-    os.makedirs(_TMP_DIR, exist_ok=True)
-    log = AutomationLogger("generate_app")
-    log.info("Carregando dados", {"input": INPUT_FILE})
-    data = load_data()
-    log.info("Gerando HTML Vue 3 + Tailwind")
-    html = build_html(data)
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        f.write(html)
-    log.info("App gerado", {"output": OUTPUT_FILE})
-    log.finish(status="success", summary={"output": OUTPUT_FILE})
-    print(f"\n  App gerado: {OUTPUT_FILE}")
-
-
-if __name__ == "__main__":
-    main()

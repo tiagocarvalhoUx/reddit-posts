@@ -22,9 +22,11 @@ if os.path.exists(_ENV_FILE):
                 _k, _v = _line.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip())
 
-BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TMP_DIR   = os.path.join(BASE_DIR, ".tmp")
-DATA_FILE = os.path.join(TMP_DIR, "reddit_top_posts.json")
+BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+IS_VERCEL  = bool(os.environ.get("VERCEL"))
+TMP_DIR    = "/tmp" if IS_VERCEL else os.path.join(BASE_DIR, ".tmp")
+PUBLIC_DIR = os.path.join(BASE_DIR, "public")
+DATA_FILE  = os.path.join(TMP_DIR, "reddit_top_posts.json")
 FETCH_SCRIPT    = os.path.join(BASE_DIR, "execution", "fetch_reddit_posts.py")
 GENERATE_SCRIPT = os.path.join(BASE_DIR, "execution", "generate_app.py")
 EMAIL_SCRIPT    = os.path.join(BASE_DIR, "execution", "send_email.py")
@@ -34,12 +36,17 @@ app = Flask(__name__, static_folder=TMP_DIR)
 
 @app.route("/")
 def index():
-    return send_from_directory(TMP_DIR, "app.html")
+    app_html = os.path.join(TMP_DIR, "app.html")
+    if os.path.exists(app_html):
+        return send_from_directory(TMP_DIR, "app.html")
+    return send_from_directory(PUBLIC_DIR, "index.html")
 
 
 @app.route("/api/data")
 def get_data():
     """Retorna os dados atuais do JSON."""
+    if not os.path.exists(DATA_FILE):
+        return jsonify({})
     with open(DATA_FILE, encoding="utf-8") as f:
         return jsonify(json.load(f))
 
@@ -51,6 +58,8 @@ def update():
     def run():
         yield 'data: {"status":"running","msg":"Buscando posts no Reddit..."}\n\n'
 
+        _env = {**os.environ, "TMP_DIR": TMP_DIR}
+
         result = subprocess.run(
             [sys.executable, FETCH_SCRIPT],
             cwd=BASE_DIR,
@@ -58,6 +67,7 @@ def update():
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=_env,
         )
 
         if result.returncode != 0:
@@ -71,6 +81,7 @@ def update():
             [sys.executable, GENERATE_SCRIPT],
             cwd=BASE_DIR,
             capture_output=True,
+            env=_env,
         )
 
         with open(DATA_FILE, encoding="utf-8") as f:
@@ -92,6 +103,7 @@ def send_email():
         text=True,
         encoding="utf-8",
         errors="replace",
+        env={**os.environ, "TMP_DIR": TMP_DIR},
     )
     if result.returncode != 0:
         return jsonify({"status": "error", "msg": result.stderr or result.stdout}), 500
