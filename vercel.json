@@ -1,7 +1,13 @@
 {
   "version": 2,
   "builds": [
-    { "src": "execution/server.py", "use": "@vercel/python" }
+    {
+      "src": "execution/server.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": ["public/**", "execution/**"]
+      }
+    }
   ],
   "routes": [
     { "src": "/(.*)", "dest": "execution/server.py" }
