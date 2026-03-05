@@ -22,12 +22,12 @@ TOPICS = {
         "subreddits": None,  # busca global, já é nicho
     },
     "automation": {
-        "query": "automation workflow OR nocode OR zapier OR make.com OR n8n OR AI agent",
-        "subreddits": ["n8n", "nocode", "zapier", "automation", "selfhosted", "MachineLearning", "artificial"],
+        "query": "automation workflow OR nocode OR zapier OR n8n OR AI agent",
+        "subreddits": ["n8n", "nocode", "automation"],
     },
 }
 TOP_N = 5
-LIMIT = 100
+LIMIT = 25
 TIME_FILTER = "week"
 _TMP_DIR = os.environ.get("TMP_DIR", ".tmp")
 OUTPUT_FILE = os.path.join(_TMP_DIR, "reddit_top_posts.json")
@@ -52,7 +52,7 @@ def fetch_posts(query: str, subreddits: list[str] | None = None, limit: int = 10
                 r.raise_for_status()
                 posts = r.json().get("data", {}).get("children", [])
                 all_posts.extend([p["data"] for p in posts])
-                time.sleep(1)
+                time.sleep(0.3)
             except requests.RequestException as e:
                 print(f"    ERRO em r/{sub}: {e}")
         # Deduplicar por id

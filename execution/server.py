@@ -99,6 +99,23 @@ def update():
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+@app.route("/api/debug")
+def debug():
+    """Roda o fetch e retorna stdout/stderr para diagnóstico."""
+    _env = {**os.environ, "TMP_DIR": TMP_DIR}
+    result = subprocess.run(
+        [sys.executable, FETCH_SCRIPT],
+        cwd=BASE_DIR, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", env=_env, timeout=25,
+    )
+    return jsonify({
+        "returncode": result.returncode,
+        "stdout": result.stdout[-3000:] if result.stdout else "",
+        "stderr": result.stderr[-3000:] if result.stderr else "",
+        "data_exists": os.path.exists(DATA_FILE),
+    })
+
+
 @app.route("/api/send-email", methods=["POST"])
 def send_email():
     """Gera e envia o e-mail HTML com os top posts."""

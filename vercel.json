@@ -5,10 +5,16 @@
       "src": "execution/server.py",
       "use": "@vercel/python",
       "config": {
-        "includeFiles": ["execution/**"]
+        "includeFiles": ["execution/**"],
+        "maxLambdaSize": "50mb"
       }
     }
   ],
+  "functions": {
+    "execution/server.py": {
+      "maxDuration": 30
+    }
+  },
   "routes": [
     { "src": "/(.*)", "dest": "execution/server.py" }
   ]
