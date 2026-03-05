@@ -25,8 +25,14 @@ if os.path.exists(_ENV_FILE):
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IS_VERCEL  = bool(os.environ.get("VERCEL"))
 TMP_DIR    = "/tmp" if IS_VERCEL else os.path.join(BASE_DIR, ".tmp")
-PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 DATA_FILE  = os.path.join(TMP_DIR, "reddit_top_posts.json")
+
+_INDEX_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "public", "index.html")
+try:
+    with open(_INDEX_HTML_PATH, encoding="utf-8") as _f:
+        _INDEX_HTML = _f.read()
+except FileNotFoundError:
+    _INDEX_HTML = "<h1>Reddit Pulse</h1><p>Clique em Refresh para carregar os dados.</p>"
 FETCH_SCRIPT    = os.path.join(BASE_DIR, "execution", "fetch_reddit_posts.py")
 GENERATE_SCRIPT = os.path.join(BASE_DIR, "execution", "generate_app.py")
 EMAIL_SCRIPT    = os.path.join(BASE_DIR, "execution", "send_email.py")
@@ -38,8 +44,9 @@ app = Flask(__name__, static_folder=TMP_DIR)
 def index():
     app_html = os.path.join(TMP_DIR, "app.html")
     if os.path.exists(app_html):
-        return send_from_directory(TMP_DIR, "app.html")
-    return send_from_directory(PUBLIC_DIR, "index.html")
+        with open(app_html, encoding="utf-8") as f:
+            return f.read(), 200, {"Content-Type": "text/html; charset=utf-8"}
+    return _INDEX_HTML, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 @app.route("/api/data")
