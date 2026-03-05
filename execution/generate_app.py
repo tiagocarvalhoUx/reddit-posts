@@ -1,0 +1,467 @@
+"""
+generate_app.py
+Gera um app HTML com Vue 3 + Tailwind CSS (mobile-first).
+Quando servido pelo server.py, busca dados via API e tem botão Atualizar.
+Output: .tmp/app.html
+"""
+
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+sys.path.insert(0, os.path.dirname(__file__))
+from logger import AutomationLogger
+
+INPUT_FILE  = ".tmp/reddit_top_posts.json"
+OUTPUT_FILE = ".tmp/app.html"
+
+TEMPLATE = r"""<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reddit Pulse · n8n & Automation</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: { base: '#070b14' },
+          backgroundImage: {
+            'glow-blue':   'radial-gradient(ellipse 70% 45% at 15% 8%,  rgba(59,130,246,0.10) 0%, transparent 65%)',
+            'glow-purple': 'radial-gradient(ellipse 55% 40% at 85% 85%, rgba(139,92,246,0.08) 0%, transparent 65%)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 99px; }
+    .text-gradient {
+      background: linear-gradient(135deg, #f0f4ff 0%, #7b8ab8 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .glass { background: rgba(255,255,255,0.04); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    .glass-hover:hover { background: rgba(255,255,255,0.07); }
+    @keyframes cardIn { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+    .card-anim { animation: cardIn 0.4s ease both; }
+    @keyframes livePulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .live-dot { animation: livePulse 2s ease-in-out infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 0.8s linear infinite; }
+    @keyframes progressBar { from { width:0% } to { width:100% } }
+    .progress-bar { animation: progressBar 22s linear forwards; }
+  </style>
+</head>
+
+<body class="bg-[#070b14] text-slate-100 min-h-screen overflow-x-hidden">
+  <div class="pointer-events-none fixed inset-0 z-0 bg-glow-blue"></div>
+  <div class="pointer-events-none fixed inset-0 z-0 bg-glow-purple"></div>
+
+  <div id="app" class="relative z-10">
+
+    <!-- HEADER -->
+    <header class="px-4 pt-10 pb-6 text-center sm:pt-14 sm:pb-8">
+      <div class="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-blue-400 mb-5">
+        <span class="live-dot h-1.5 w-1.5 rounded-full bg-blue-400"></span>
+        Reddit Pulse
+      </div>
+      <h1 class="text-gradient text-3xl font-extrabold tracking-tight sm:text-4xl lg:text-5xl mb-2">
+        Top Posts da Semana
+      </h1>
+      <p class="text-sm text-slate-400 mb-5">Os posts mais relevantes sobre n8n e automação no Reddit</p>
+
+      <!-- Botão Atualizar -->
+      <button
+        @click="refresh"
+        :disabled="updating"
+        :class="[
+          'inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-200',
+          updating
+            ? 'cursor-not-allowed bg-white/5 text-slate-500 border border-white/8'
+            : 'bg-blue-500/15 border border-blue-500/30 text-blue-400 hover:bg-blue-500/25 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10'
+        ]"
+      >
+        <svg v-if="updating" class="spinner h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+        <span>{{ updating ? statusMsg || 'Atualizando...' : 'Atualizar' }}</span>
+      </button>
+
+      <!-- Botão Enviar E-mail -->
+      <button
+        @click="sendEmail"
+        :disabled="sending || updating"
+        :class="[
+          'ml-2 inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-200',
+          sending || updating
+            ? 'cursor-not-allowed bg-white/5 text-slate-500 border border-white/8'
+            : emailSent
+              ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400'
+              : 'bg-orange-500/15 border border-orange-500/30 text-orange-400 hover:bg-orange-500/25 hover:border-orange-500/50 hover:shadow-lg hover:shadow-orange-500/10'
+        ]"
+      >
+        <svg v-if="sending" class="spinner h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        <svg v-else-if="emailSent" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+        <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+        <span>{{ sending ? 'Enviando...' : emailSent ? 'Enviado!' : 'Enviar E-mail' }}</span>
+      </button>
+
+      <!-- Toast de erro -->
+      <div v-if="emailError"
+        class="mx-auto mt-3 max-w-sm rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-2.5 text-xs text-red-400">
+        {{ emailError }}
+      </div>
+
+      <!-- Barra de progresso -->
+      <div v-if="updating" class="mx-auto mt-3 max-w-xs h-[2px] rounded-full bg-white/[0.06] overflow-hidden">
+        <div class="progress-bar h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400"></div>
+      </div>
+
+      <div class="mt-3 inline-block rounded-lg border border-white/8 bg-white/[0.03] px-3 py-1 text-[11px] text-slate-500">
+        Atualizado em {{ generatedAt }}
+      </div>
+    </header>
+
+    <!-- MAIN -->
+    <main class="mx-auto max-w-2xl px-4 pb-16">
+
+      <!-- Skeleton loading -->
+      <template v-if="!posts.n8n">
+        <div v-for="i in 3" :key="i" class="mb-3 h-40 animate-pulse rounded-2xl bg-white/[0.04] border border-white/[0.05]"></div>
+      </template>
+
+      <template v-else>
+        <!-- Tab Bar -->
+        <div class="relative mb-6 flex gap-1 rounded-2xl border border-white/8 bg-white/[0.03] p-1.5">
+          <button
+            v-for="tab in tabs" :key="tab.id"
+            @click="activeTab = tab.id"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200',
+              activeTab === tab.id
+                ? (tab.id === 'n8n'
+                    ? 'bg-blue-500/[0.12] text-slate-100 font-semibold'
+                    : 'bg-purple-500/[0.12] text-slate-100 font-semibold')
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+            ]"
+          >
+            <span class="text-base">{{ tab.icon }}</span>
+            <span>{{ tab.label }}</span>
+            <span v-if="activeTab === tab.id"
+              :class="['ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-bold',
+                tab.id === 'n8n' ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'
+              ]">{{ (posts[tab.id] || []).length }}</span>
+          </button>
+        </div>
+
+        <!-- Tab header -->
+        <div class="mb-4 flex items-center justify-between">
+          <div :class="['inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider',
+            activeTab === 'n8n'
+              ? 'border border-blue-500/20 bg-blue-500/10 text-blue-400'
+              : 'border border-purple-500/20 bg-purple-500/10 text-purple-400'
+          ]">
+            <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
+            {{ activeTab === 'n8n' ? 'n8n' : 'Automation' }}
+          </div>
+          <span class="text-xs text-slate-600">{{ currentPosts.length }} posts · semana atual</span>
+        </div>
+
+        <!-- Post cards -->
+        <div class="flex flex-col gap-4">
+          <article
+            v-for="(post, idx) in currentPosts"
+            :key="post.url"
+            class="card-anim overflow-hidden rounded-2xl border border-white/[0.07]
+                   transition-all duration-200 hover:-translate-y-0.5
+                   hover:border-blue-500/25 hover:shadow-xl hover:shadow-blue-500/8"
+            :style="{ animationDelay: (idx * 0.07) + 's', background: 'rgba(255,255,255,0.04)' }"
+          >
+            <!-- ── IMAGE AREA ── -->
+            <a :href="post.url" target="_blank" rel="noopener" class="block relative overflow-hidden" style="aspect-ratio:16/7">
+
+              <!-- Imagem real -->
+              <img
+                v-if="post.image_url"
+                :src="post.image_url"
+                :alt="post.title"
+                class="h-full w-full object-cover transition-transform duration-500 hover:scale-105"
+                loading="lazy"
+                @error="post.image_url = null"
+              />
+
+              <!-- Placeholder gradiente quando não há imagem -->
+              <div v-else
+                :style="{ background: placeholderGradient(post.rank, activeTab) }"
+                class="h-full w-full flex items-center justify-center"
+              >
+                <span class="text-4xl opacity-20 select-none">{{ activeTab === 'n8n' ? '⚡' : '🤖' }}</span>
+              </div>
+
+              <!-- Overlay escuro no fundo da imagem -->
+              <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
+
+              <!-- Rank badge sobre a imagem -->
+              <div class="absolute top-3 left-3">
+                <span :class="['rounded-full px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm', rankClass(post.rank)]">
+                  #{{ post.rank }}
+                </span>
+              </div>
+
+              <!-- Flair badge -->
+              <div v-if="post.flair" class="absolute top-3 right-3">
+                <span class="rounded-full border border-white/15 bg-black/40 px-2 py-0.5 text-[10px] text-slate-300 backdrop-blur-sm max-w-[160px] truncate block">
+                  {{ post.flair }}
+                </span>
+              </div>
+
+              <!-- Stats sobrepostos no rodapé da imagem -->
+              <div class="absolute bottom-0 left-0 right-0 flex items-center gap-3 px-4 py-2.5 text-[12px] font-medium text-white/80">
+                <div class="flex items-center gap-1">
+                  <svg class="h-3.5 w-3.5 opacity-70" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l8 8H4z"/></svg>
+                  {{ post.upvotes.toLocaleString() }}
+                </div>
+                <div class="flex items-center gap-1">
+                  <svg class="h-3.5 w-3.5 opacity-70" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+                  {{ post.comments.toLocaleString() }}
+                </div>
+                <div :class="['ml-auto flex items-center gap-1 font-semibold',
+                  activeTab === 'n8n' ? 'text-blue-300' : 'text-purple-300']">
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>
+                  {{ post.engagement_score.toLocaleString() }} pts
+                </div>
+              </div>
+            </a>
+
+            <!-- ── CONTENT AREA ── -->
+            <div class="p-4 sm:p-5">
+
+              <!-- Meta row -->
+              <div class="mb-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                <span :class="['rounded-full px-2 py-0.5 font-semibold',
+                  activeTab === 'n8n' ? 'bg-blue-500/10 text-blue-400' : 'bg-purple-500/10 text-purple-400']">
+                  {{ post.subreddit }}
+                </span>
+                <span class="text-slate-700">·</span>
+                <span class="text-slate-500">u/{{ post.author }}</span>
+                <span class="text-slate-700">·</span>
+                <span class="text-slate-600">{{ post.created_utc.replace(' UTC','') }}</span>
+              </div>
+
+              <!-- Title -->
+              <h2 class="mb-3 text-sm font-semibold leading-snug text-slate-100 sm:text-[15px]">
+                <a :href="post.url" target="_blank" rel="noopener"
+                  :class="['transition-colors duration-150', activeTab === 'n8n' ? 'hover:text-blue-400' : 'hover:text-purple-400']">
+                  {{ post.title }}
+                </a>
+              </h2>
+
+              <!-- Engagement bar -->
+              <div class="mb-3.5 h-[2px] overflow-hidden rounded-full bg-white/[0.06]">
+                <div class="h-full rounded-full transition-all duration-700"
+                  :style="{ width: barPct(post.engagement_score) + '%',
+                    background: activeTab === 'n8n' ? 'linear-gradient(90deg,#3b82f6,#06b6d4)' : 'linear-gradient(90deg,#8b5cf6,#ec4899)' }">
+                </div>
+              </div>
+
+              <!-- CTA -->
+              <a :href="post.url" target="_blank" rel="noopener"
+                :class="['inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-xs font-semibold transition-all duration-200',
+                  activeTab === 'n8n'
+                    ? 'border-blue-500/20 bg-blue-500/10 text-blue-400 hover:bg-blue-500/25 hover:border-blue-500/40'
+                    : 'border-purple-500/20 bg-purple-500/10 text-purple-400 hover:bg-purple-500/25 hover:border-purple-500/40'
+                ]">
+                Ver post
+                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </a>
+            </div>
+          </article>
+        </div>
+      </template>
+    </main>
+
+    <footer class="pb-10 text-center text-[11px] text-slate-700">
+      Gerado por Antigravity Agent · dados via Reddit JSON API
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    // Dados embarcados (fallback offline) — sobrescritos pela API quando disponível
+    const INITIAL_DATA = __DATA__;
+
+    createApp({
+      setup() {
+        const posts      = ref(INITIAL_DATA);
+        const activeTab  = ref('n8n');
+        const generatedAt = ref('__GENERATED_AT__');
+        const updating   = ref(false);
+        const statusMsg  = ref('');
+        const sending    = ref(false);
+        const emailSent  = ref(false);
+        const emailError = ref('');
+
+        const tabs = [
+          { id: 'n8n',        label: 'n8n',       icon: '⚡' },
+          { id: 'automation', label: 'Automation', icon: '🤖' }
+        ];
+
+        const currentPosts = computed(() => posts.value[activeTab.value] || []);
+        const maxScore = computed(() =>
+          Math.max(...(posts.value[activeTab.value] || []).map(p => p.engagement_score), 1)
+        );
+        const barPct = (score) => Math.round((score / maxScore.value) * 100);
+        const rankClass = (rank) => {
+          if (rank === 1) return 'bg-amber-500/15 text-amber-400 border border-amber-500/25';
+          if (rank === 2) return 'bg-slate-400/10 text-slate-400 border border-slate-400/20';
+          if (rank === 3) return 'bg-orange-500/10 text-orange-400 border border-orange-500/20';
+          return 'bg-white/[0.05] text-slate-500 border border-white/10';
+        };
+        const PLACEHOLDERS_N8N = [
+          'linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0c2340 100%)',
+          'linear-gradient(135deg,#0d1b2a 0%,#1b3a4b 50%,#0f2027 100%)',
+          'linear-gradient(135deg,#0f0c29 0%,#1a237e 50%,#0d1b2a 100%)',
+          'linear-gradient(135deg,#0a0f1e 0%,#162032 50%,#1a2744 100%)',
+          'linear-gradient(135deg,#070b14 0%,#1c2e4a 50%,#0b1829 100%)',
+        ];
+        const PLACEHOLDERS_AUTO = [
+          'linear-gradient(135deg,#1a0533 0%,#3b1f6e 50%,#0f0626 100%)',
+          'linear-gradient(135deg,#14022e 0%,#2d1260 50%,#1a0533 100%)',
+          'linear-gradient(135deg,#0d0221 0%,#4a1a8c 50%,#2d1260 100%)',
+          'linear-gradient(135deg,#120030 0%,#3a0069 50%,#1a0040 100%)',
+          'linear-gradient(135deg,#0a001a 0%,#2e1055 50%,#160038 100%)',
+        ];
+        const placeholderGradient = (rank, tab) => {
+          const arr = tab === 'n8n' ? PLACEHOLDERS_N8N : PLACEHOLDERS_AUTO;
+          return arr[(rank - 1) % arr.length];
+        };
+
+        // Tenta buscar dados frescos da API ao carregar
+        onMounted(async () => {
+          try {
+            const r = await fetch('/api/data');
+            if (r.ok) posts.value = await r.json();
+          } catch (_) { /* offline — usa dados embarcados */ }
+        });
+
+        // Botão Atualizar — chama /api/update via SSE
+        const refresh = async () => {
+          if (updating.value) return;
+          updating.value = true;
+          statusMsg.value = 'Conectando...';
+
+          try {
+            const es = new EventSource('/api/update');
+
+            es.onerror = () => { es.close(); updating.value = false; statusMsg.value = ''; };
+
+            es.onmessage = (e) => {
+              const msg = JSON.parse(e.data);
+              if (msg.status === 'running') {
+                statusMsg.value = msg.msg;
+              } else if (msg.status === 'done') {
+                posts.value = msg.data;
+                generatedAt.value = new Date().toLocaleString('pt-BR');
+                es.close();
+                updating.value = false;
+                statusMsg.value = '';
+              } else if (msg.status === 'error') {
+                console.error(msg.msg);
+                es.close();
+                updating.value = false;
+                statusMsg.value = '';
+              }
+            };
+          } catch (err) {
+            console.error(err);
+            updating.value = false;
+          }
+        };
+
+        const sendEmail = async () => {
+          if (sending.value || updating.value) return;
+          sending.value  = true;
+          emailSent.value = false;
+          emailError.value = '';
+          try {
+            const r = await fetch('/api/send-email', { method: 'POST' });
+            const body = await r.json();
+            if (r.ok) {
+              emailSent.value = true;
+              setTimeout(() => { emailSent.value = false; }, 4000);
+            } else {
+              emailError.value = body.msg || 'Erro ao enviar e-mail.';
+              setTimeout(() => { emailError.value = ''; }, 6000);
+            }
+          } catch (e) {
+            emailError.value = 'Sem conexão com o servidor.';
+            setTimeout(() => { emailError.value = ''; }, 6000);
+          } finally {
+            sending.value = false;
+          }
+        };
+
+        return { posts, activeTab, generatedAt, updating, statusMsg, sending, emailSent, emailError, tabs, currentPosts, barPct, rankClass, placeholderGradient, refresh, sendEmail };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
+"""
+
+
+def load_data() -> dict:
+    with open(INPUT_FILE, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def build_html(data: dict) -> str:
+    generated_at = datetime.now(timezone.utc).strftime("%b %d, %Y · %H:%M UTC")
+    data_json = json.dumps(data, ensure_ascii=False)
+    return (
+        TEMPLATE
+        .replace("__DATA__", data_json)
+        .replace("__GENERATED_AT__", generated_at)
+    )
+
+
+def main():
+    os.makedirs(".tmp", exist_ok=True)
+    log = AutomationLogger("generate_app")
+    log.info("Carregando dados", {"input": INPUT_FILE})
+    data = load_data()
+    log.info("Gerando HTML Vue 3 + Tailwind")
+    html = build_html(data)
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        f.write(html)
+    log.info("App gerado", {"output": OUTPUT_FILE})
+    log.finish(status="success", summary={"output": OUTPUT_FILE})
+    print(f"\n  App gerado: {OUTPUT_FILE}")
+
+
+if __name__ == "__main__":
+    main()

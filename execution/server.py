@@ -1,0 +1,104 @@
+"""
+server.py
+Servidor Flask que serve o app Vue e expõe API para atualizar os posts do Reddit.
+
+Uso: python execution/server.py
+Acesse: http://localhost:8080
+"""
+
+import json
+import os
+import subprocess
+import sys
+from flask import Flask, jsonify, send_from_directory, Response
+
+# Carrega variáveis do .env manualmente
+_ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+if os.path.exists(_ENV_FILE):
+    with open(_ENV_FILE) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
+BASE_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TMP_DIR   = os.path.join(BASE_DIR, ".tmp")
+DATA_FILE = os.path.join(TMP_DIR, "reddit_top_posts.json")
+FETCH_SCRIPT    = os.path.join(BASE_DIR, "execution", "fetch_reddit_posts.py")
+GENERATE_SCRIPT = os.path.join(BASE_DIR, "execution", "generate_app.py")
+EMAIL_SCRIPT    = os.path.join(BASE_DIR, "execution", "send_email.py")
+
+app = Flask(__name__, static_folder=TMP_DIR)
+
+
+@app.route("/")
+def index():
+    return send_from_directory(TMP_DIR, "app.html")
+
+
+@app.route("/api/data")
+def get_data():
+    """Retorna os dados atuais do JSON."""
+    with open(DATA_FILE, encoding="utf-8") as f:
+        return jsonify(json.load(f))
+
+
+@app.route("/api/update", methods=["GET", "POST"])
+def update():
+    """Executa o fetch e retorna os novos dados via streaming de progresso."""
+
+    def run():
+        yield 'data: {"status":"running","msg":"Buscando posts no Reddit..."}\n\n'
+
+        result = subprocess.run(
+            [sys.executable, FETCH_SCRIPT],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        if result.returncode != 0:
+            err = result.stderr.replace('"', "'")
+            yield f'data: {{"status":"error","msg":"{err}"}}\n\n'
+            return
+
+        yield 'data: {"status":"running","msg":"Gerando app..."}\n\n'
+
+        subprocess.run(
+            [sys.executable, GENERATE_SCRIPT],
+            cwd=BASE_DIR,
+            capture_output=True,
+        )
+
+        with open(DATA_FILE, encoding="utf-8") as f:
+            data = json.dumps(json.load(f), ensure_ascii=False)
+
+        yield f'data: {{"status":"done","data":{data}}}\n\n'
+
+    return Response(run(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/send-email", methods=["POST"])
+def send_email():
+    """Gera e envia o e-mail HTML com os top posts."""
+    result = subprocess.run(
+        [sys.executable, EMAIL_SCRIPT],
+        cwd=BASE_DIR,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        return jsonify({"status": "error", "msg": result.stderr or result.stdout}), 500
+    return jsonify({"status": "ok", "msg": "E-mail enviado com sucesso!"})
+
+
+if __name__ == "__main__":
+    os.makedirs(TMP_DIR, exist_ok=True)
+    print(f"\n  Reddit Pulse rodando em: http://localhost:8080\n")
+    app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
