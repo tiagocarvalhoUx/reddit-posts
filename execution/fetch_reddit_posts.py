@@ -15,11 +15,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 from logger import AutomationLogger
 
 # --- Config ---
-# Para "automation", restringimos a subreddits de workflow/tech para evitar ruído
 TOPICS = {
     "n8n": {
         "query": "n8n",
-        "subreddits": None,  # busca global, já é nicho
+        "subreddits": None,
     },
     "automation": {
         "query": "automation workflow OR nocode OR zapier OR n8n OR AI agent",
@@ -32,30 +31,58 @@ TIME_FILTER = "week"
 _TMP_DIR = os.environ.get("TMP_DIR", ".tmp")
 OUTPUT_FILE = os.path.join(_TMP_DIR, "reddit_top_posts.json")
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-    "Accept-Language": "en-US,en;q=0.9",
-}
+USER_AGENT = "RedditPulse/1.0 by antigravity-agent"
 
-def fetch_posts(query: str, subreddits: list[str] | None = None, limit: int = 100) -> list[dict]:
+# --- OAuth (usado quando REDDIT_CLIENT_ID está disponível) ---
+def _get_oauth_token() -> str | None:
+    client_id = os.environ.get("REDDIT_CLIENT_ID")
+    client_secret = os.environ.get("REDDIT_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        return None
+    r = requests.post(
+        "https://www.reddit.com/api/v1/access_token",
+        auth=(client_id, client_secret),
+        data={"grant_type": "client_credentials"},
+        headers={"User-Agent": USER_AGENT},
+        timeout=10,
+    )
+    r.raise_for_status()
+    return r.json().get("access_token")
+
+def _make_session() -> tuple[requests.Session, str]:
+    """Retorna (session, base_url). Usa OAuth se disponível, senão JSON API."""
+    session = requests.Session()
+    token = _get_oauth_token()
+    if token:
+        session.headers.update({
+            "Authorization": f"Bearer {token}",
+            "User-Agent": USER_AGENT,
+        })
+        return session, "https://oauth.reddit.com"
+    # Fallback: JSON API pública com User-Agent de browser
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+    })
+    return session, "https://www.reddit.com"
+
+def fetch_posts(query: str, subreddits: list[str] | None = None, limit: int = 25) -> list[dict]:
     """Busca posts no Reddit. Se subreddits fornecidos, busca em cada um e agrega."""
+    session, base = _make_session()
     all_posts = []
 
     if subreddits:
-        # Busca dentro de cada subreddit relevante
         for sub in subreddits:
-            url = f"https://www.reddit.com/r/{sub}/search.json"
+            url = f"{base}/r/{sub}/search.json"
             params = {"q": query, "sort": "top", "limit": limit, "t": TIME_FILTER, "restrict_sr": "true"}
             try:
-                r = requests.get(url, headers=HEADERS, params=params, timeout=15)
+                r = session.get(url, params=params, timeout=15)
                 r.raise_for_status()
                 posts = r.json().get("data", {}).get("children", [])
                 all_posts.extend([p["data"] for p in posts])
                 time.sleep(0.3)
             except requests.RequestException as e:
                 print(f"    ERRO em r/{sub}: {e}")
-        # Deduplicar por id
         seen = set()
         unique = []
         for p in all_posts:
@@ -65,10 +92,10 @@ def fetch_posts(query: str, subreddits: list[str] | None = None, limit: int = 10
         print(f"  {len(unique)} posts únicos após busca em {len(subreddits)} subreddits")
         return unique
     else:
-        url = "https://www.reddit.com/search.json"
+        url = f"{base}/search.json"
         params = {"q": query, "sort": "top", "limit": limit, "t": TIME_FILTER, "type": "link"}
         try:
-            r = requests.get(url, headers=HEADERS, params=params, timeout=15)
+            r = session.get(url, params=params, timeout=15)
             r.raise_for_status()
             posts = r.json().get("data", {}).get("children", [])
             print(f"  {len(posts)} posts retornados")
