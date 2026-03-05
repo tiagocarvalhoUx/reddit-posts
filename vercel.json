@@ -5,7 +5,7 @@
       "src": "execution/server.py",
       "use": "@vercel/python",
       "config": {
-        "includeFiles": ["public/**", "execution/**"]
+        "includeFiles": ["execution/**"]
       }
     }
   ],

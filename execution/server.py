@@ -27,7 +27,7 @@ IS_VERCEL  = bool(os.environ.get("VERCEL"))
 TMP_DIR    = "/tmp" if IS_VERCEL else os.path.join(BASE_DIR, ".tmp")
 DATA_FILE  = os.path.join(TMP_DIR, "reddit_top_posts.json")
 
-_INDEX_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "public", "index.html")
+_INDEX_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 try:
     with open(_INDEX_HTML_PATH, encoding="utf-8") as _f:
         _INDEX_HTML = _f.read()
