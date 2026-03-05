@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-LOGS_DIR = "logs"
+LOGS_DIR = "/tmp/logs" if os.environ.get("VERCEL") else "logs"
 
 class AutomationLogger:
     def __init__(self, name: str):
