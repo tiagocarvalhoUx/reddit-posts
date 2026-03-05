@@ -63,7 +63,7 @@ def update():
     """Executa o fetch e retorna os novos dados via streaming de progresso."""
 
     def run():
-        yield 'data: {"status":"running","msg":"Buscando posts no Reddit..."}\n\n'
+        yield "data: " + json.dumps({"status": "running", "msg": "Buscando posts no Reddit..."}) + "\n\n"
 
         _env = {**os.environ, "TMP_DIR": TMP_DIR}
 
@@ -78,11 +78,10 @@ def update():
         )
 
         if result.returncode != 0:
-            err = result.stderr.replace('"', "'")
-            yield f'data: {{"status":"error","msg":"{err}"}}\n\n'
+            yield "data: " + json.dumps({"status": "error", "msg": result.stderr or result.stdout}) + "\n\n"
             return
 
-        yield 'data: {"status":"running","msg":"Gerando app..."}\n\n'
+        yield "data: " + json.dumps({"status": "running", "msg": "Gerando app..."}) + "\n\n"
 
         subprocess.run(
             [sys.executable, GENERATE_SCRIPT],
@@ -92,9 +91,9 @@ def update():
         )
 
         with open(DATA_FILE, encoding="utf-8") as f:
-            data = json.dumps(json.load(f), ensure_ascii=False)
+            data = json.load(f)
 
-        yield f'data: {{"status":"done","data":{data}}}\n\n'
+        yield "data: " + json.dumps({"status": "done", "data": data}) + "\n\n"
 
     return Response(run(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
